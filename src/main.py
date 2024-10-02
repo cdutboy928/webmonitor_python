@@ -28,6 +28,11 @@ def main():
         print("正在停止监控...")
         monitor.pause()
         print("监控已停止")
+    except Exception as e:
+        print(f"发生未预期的错误: {e}")
+    finally:
+        if monitor and monitor.driver:
+            monitor.driver.quit()
 
 if __name__ == "__main__":
     main()

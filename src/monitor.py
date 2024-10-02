@@ -1,5 +1,5 @@
 from .email_utils import send_alert_email  # 使用相对导入
-from tkinter import messagebox
+from tkinter import messagebox, Tk
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -9,15 +9,19 @@ import time
 import datetime
 import os
 import sys
+from playsound import playsound
 
 class Monitor:
-    def __init__(self, url, interval, keyword, log_directory='logs'):
+    def __init__(self, url, interval, keyword, log_directory='logs', sound_file='sounds/alert.mp3'):
         self.url = url
         self.interval = interval
         self.keyword = keyword
         self.monitoring = False
         self.driver = None
         self.log_directory = log_directory
+        self.sound_file = sound_file
+        self.root = Tk()
+        self.root.withdraw()  # 隐藏主窗口
 
         if not os.path.exists(self.log_directory):
             os.makedirs(self.log_directory)
@@ -25,6 +29,10 @@ class Monitor:
         print(f"当前工作目录: {os.getcwd()}")
         print(f"Python 版本: {sys.version}")
         print(f"Selenium 版本: {webdriver.__version__}")
+        if not os.path.exists(self.sound_file):
+            print(f"警告：声音文件 {self.sound_file} 不存在")
+        else:
+            print(f"声音文件路径: {os.path.abspath(self.sound_file)}")
 
     def start(self):
         if not self.monitoring:
@@ -45,9 +53,10 @@ class Monitor:
         options.headless = True
         
         try:
+            print("正在初始化 Firefox WebDriver...")
             service = Service(GeckoDriverManager().install())
             self.driver = webdriver.Firefox(service=service, options=options)
-            print("Firefox WebDriver 已初始化")
+            print("Firefox WebDriver 已成功初始化")
         except Exception as e:
             print(f"初始化 WebDriver 时发生错误: {e}")
             self.monitoring = False
@@ -57,15 +66,17 @@ class Monitor:
             try:
                 print(f"正在访问 URL: {self.url}")
                 self.driver.get(self.url)
+                print("等待页面加载...")
                 time.sleep(5)  # 等待页面加载
 
+                print("正在获取页面内容...")
                 page_text = self.driver.find_element("tag name", "body").text
-                print("已获取页面内容")
+                print("已成功获取页面内容")
                 self.save_log(page_text)
 
                 if self.keyword in page_text:
                     print(f"检测到关键词: {self.keyword}")
-                    self.alert(self.keyword)
+                    threading.Thread(target=self.alert, args=(self.keyword,), daemon=True).start()
                 else:
                     print(f"未检测到关键词: {self.keyword}")
 
@@ -77,7 +88,7 @@ class Monitor:
                 if self.driver:
                     self.driver.quit()
                     self.driver = None
-                messagebox.showerror("监测错误", str(e))
+                self.show_error("监测错误", str(e))
 
     def save_log(self, page_text):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -91,9 +102,31 @@ class Monitor:
             print(f"保存日志失败: {e}")
 
     def alert(self, keyword):
+        print(f"正在触发告警...")
         print(f"检测到关键词: {keyword}")
-        messagebox.showwarning("关键词检测", f"检测到关键词: {keyword}")
-        send_alert_email(keyword, self.url)
+        self.show_warning("关键词检测", f"检测到关键词: {keyword}")
+        try:
+            print(f"尝试播放告警声音: {self.sound_file}")
+            threading.Thread(target=playsound, args=(self.sound_file,), daemon=True).start()
+            print("告警声音播放线程已启动")
+        except Exception as e:
+            print(f"播放告警声音失败: {e}")
+        print("正在发送告警邮件...")
+        threading.Thread(target=send_alert_email, args=(keyword, self.url), daemon=True).start()
+        print("告警邮件发送线程已启动")
+        print("告警流程完成")
+
+    def show_warning(self, title, message):
+        threading.Thread(target=self._show_message_box, args=(title, message, 'warning'), daemon=True).start()
+
+    def show_error(self, title, message):
+        threading.Thread(target=self._show_message_box, args=(title, message, 'error'), daemon=True).start()
+
+    def _show_message_box(self, title, message, type_):
+        if type_ == 'warning':
+            messagebox.showwarning(title, message)
+        elif type_ == 'error':
+            messagebox.showerror(title, message)
 
     def get_latest_log(self):
         try:
